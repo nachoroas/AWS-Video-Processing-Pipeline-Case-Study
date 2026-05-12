@@ -1,34 +1,35 @@
+# operations.md
+
 # Operations
 
-This document describes the operational concerns of the video-processing pipeline: job states, retries, logging, monitoring, failure handling and cost control.
+This document describes how the pipeline handles job states, failures, retries, logging, monitoring and cost control.
 
 ## Operational Summary
 
-| Area          | Approach                                                       |
-| ------------- | -------------------------------------------------------------- |
-| Job lifecycle | Track each job through explicit states                         |
-| Retries       | Retry transient failures with limits                           |
-| Logging       | Log upload, dispatch, Batch execution and result-writing steps |
-| Monitoring    | Watch queue depth, failed jobs, runtime and storage growth     |
-| Cost control  | Limit concurrency and avoid always-on compute                  |
-| Recovery      | Reprocess from S3 using stored job metadata                    |
+| Area          | Approach                                                |
+| ------------- | ------------------------------------------------------- |
+| Job lifecycle | Track each job through explicit states                  |
+| Dispatch      | Use Lambda to move validated jobs from SQS to AWS Batch |
+| Processing    | Run containerized workloads in AWS Batch                |
+| Failures      | Preserve job context and mark failed states             |
+| Retries       | Retry transient failures with limits                    |
+| Cost control  | Limit concurrency and avoid always-on compute           |
+| Recovery      | Reprocess from S3 using stored job metadata             |
 
 ## Job Lifecycle
 
-The system should track each job through clear states.
-
-Recommended states:
+Each video-processing request should move through explicit states.
 
 | State        | Meaning                                             |
 | ------------ | --------------------------------------------------- |
 | `PENDING`    | The job was created, but processing has not started |
-| `QUEUED`     | The video upload produced a queue message           |
+| `QUEUED`     | The upload produced a processing request            |
 | `DISPATCHED` | Lambda submitted the job to AWS Batch               |
 | `RUNNING`    | AWS Batch started the processing container          |
 | `SUCCEEDED`  | The worker finished and wrote results to S3         |
 | `FAILED`     | The job failed during dispatch or processing        |
 
-These states make the pipeline easier to debug. They also let the backend expose meaningful progress to users instead of treating the process as a black box.
+These states make the pipeline easier to debug. They also let the backend expose meaningful progress to users.
 
 ## Dispatch Operation
 
@@ -36,15 +37,15 @@ Lambda handles dispatch from SQS to AWS Batch.
 
 For each message, Lambda should:
 
-1. Read the SQS message.
-2. Validate required metadata.
-3. Check that the input object exists in S3.
-4. Check concurrency limits.
-5. Submit the job to AWS Batch.
-6. Store the Batch job identifier.
-7. Update the job state to `DISPATCHED`.
+1. read the SQS message;
+2. validate required metadata;
+3. check that the input object exists in S3;
+4. check concurrency limits;
+5. submit the job to AWS Batch;
+6. store the Batch job identifier;
+7. update the job state to `DISPATCHED`.
 
-The dispatcher should stay small. It should not run video-processing logic.
+The dispatcher stays small. It does not run video-processing logic.
 
 ## Processing Operation
 
@@ -52,18 +53,18 @@ AWS Batch runs the processing container.
 
 For each job, the container should:
 
-1. Read job parameters.
-2. Download or stream the input video from S3.
-3. Run the video-processing task.
-4. Write output files to S3.
-5. Emit logs for each relevant step.
-6. Update the job state to `SUCCEEDED` or `FAILED`.
+1. read job parameters;
+2. download or stream the input video from S3;
+3. run the video-processing task;
+4. write output files to S3;
+5. emit logs for each relevant step;
+6. update the job state to `SUCCEEDED` or `FAILED`.
 
-The worker should fail loudly when required inputs are missing. Silent failures make recovery harder.
+The worker should fail with clear errors when required inputs are missing.
 
 ## Failure Handling
 
-The most important failure cases are:
+The main failure cases are:
 
 | Failure                | Handling                                               |
 | ---------------------- | ------------------------------------------------------ |
@@ -81,7 +82,7 @@ Failures should preserve enough context to support debugging: job id, input key,
 
 Retries should be bounded.
 
-Recommended retry policy:
+The system should:
 
 * retry transient AWS errors;
 * avoid retrying invalid metadata;
@@ -125,8 +126,6 @@ Logs should let an operator reconstruct the full path of a job from upload to re
 
 The pipeline should monitor both correctness and cost.
 
-Useful metrics:
-
 | Metric                  | Why it matters                             |
 | ----------------------- | ------------------------------------------ |
 | SQS queue depth         | Shows backlog                              |
@@ -138,7 +137,7 @@ Useful metrics:
 | Lambda errors           | Shows dispatch problems                    |
 | Retry count             | Shows unstable workloads or infrastructure |
 
-The key operational question is simple: can the system process new videos without silent failures or uncontrolled cost growth?
+The key operational question is whether the system can process new videos without silent failures or uncontrolled cost growth.
 
 ## Concurrency Control
 
@@ -179,7 +178,7 @@ The system should optimize for controlled throughput, not maximum parallelism.
 
 ## Recovery
 
-Recovery should start from job metadata and S3 objects.
+Recovery starts from job metadata and S3 objects.
 
 A job can be reprocessed when:
 
@@ -227,6 +226,6 @@ Reprocessing should create a visible state transition. Operators should know whe
 
 ## Operational Outcome
 
-The operational model keeps the pipeline inspectable. Each job has a state, each component has a narrow responsibility and each failure should leave enough context for recovery.
+The operational model keeps the pipeline inspectable. Each job has a state, each component has a narrow responsibility and each failure leaves enough context for recovery.
 
 The system favors predictable processing, bounded retries and controlled cost over maximum throughput.
