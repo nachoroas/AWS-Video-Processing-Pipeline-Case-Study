@@ -1,5 +1,3 @@
-# README.md
-
 # AWS Video Processing Pipeline Case Study
 
 Technical case study of an AWS-based pipeline for asynchronous sports video processing.
