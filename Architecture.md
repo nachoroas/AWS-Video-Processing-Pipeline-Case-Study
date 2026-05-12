@@ -1,8 +1,12 @@
+# architecture.md
+
 # Architecture
 
 This architecture processes long-running sports videos through an asynchronous AWS pipeline. The backend creates and tracks jobs, while the processing workload runs outside the request-response path.
 
+```txt
 S3 upload → SQS queue → Lambda dispatcher → AWS Batch worker → S3 results
+```
 
 ## Overview
 
@@ -70,8 +74,6 @@ The system avoids sending large video files through services designed for small 
 
 ## Responsibility Boundaries
 
-Each component has a narrow responsibility.
-
 | Component | Responsibility                      |
 | --------- | ----------------------------------- |
 | S3        | Store input and output files        |
@@ -92,11 +94,11 @@ The main failure points are:
 * inconsistent job states;
 * permission errors between AWS services.
 
-The architecture should handle these cases through explicit job states, structured logs, retries and restricted IAM permissions.
+The architecture handles these cases through explicit job states, structured logs, bounded retries and restricted IAM permissions.
 
 ## Concurrency Control
 
-Video processing can be expensive when several jobs run at the same time.
+Video processing can become expensive when several jobs run at the same time.
 
 The system controls concurrency before dispatching jobs to AWS Batch. This keeps compute usage predictable and prevents the architecture from scaling beyond the intended cost envelope.
 
@@ -104,7 +106,7 @@ The system controls concurrency before dispatching jobs to AWS Batch. This keeps
 
 Generated results are written to S3.
 
-The backend exposes access to those results through application-level permissions. A common approach is to use presigned URLs, so users can download outputs without making the bucket public.
+The backend exposes access to those results through application-level permissions. One practical option is to generate presigned URLs after validating that the user can access the job.
 
 ## Design Summary
 
