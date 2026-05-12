@@ -1,5 +1,3 @@
-# decisions.md
-
 # Technical Decisions
 
 The pipeline uses AWS managed services to process long-running videos without blocking the backend or keeping compute resources active when there is no work.
