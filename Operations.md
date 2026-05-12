@@ -1,5 +1,3 @@
-# operations.md
-
 # Operations
 
 This document describes how the pipeline handles job states, failures, retries, logging, monitoring and cost control.
